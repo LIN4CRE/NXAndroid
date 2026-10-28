@@ -82,3 +82,83 @@ test('Frame pacing metrics calculation outputs correct statistics', () => {
   assert.ok(metrics.avgFps > 50 && metrics.avgFps < 65);
   assert.equal(metrics.stutterCount >= 1, true); // The 33.3ms frame is a stutter
 });
+
+import {
+  createSaveState,
+  serializeSaveState,
+  deserializeSaveState,
+  SAVE_STATE_MAGIC,
+  formatPlaytime,
+} from '../games/saveState.ts';
+
+test('SaveState creates valid state with ARM64 CPU registers and Horizon memory map', () => {
+  const engineSnapshot = {
+    score: 350,
+    playerPos: [2.5, 0.5, -12.4] as [number, number, number],
+    playerVelY: 0,
+    cameraPos: [2.5, 3.5, -4.4] as [number, number, number],
+    playtimeSeconds: 42,
+    targets: [{ id: 0, x: 2.5, y: 0.7, z: -15.0, collected: false }],
+  };
+
+  const state = createSaveState('odyssey', 'Odyssey Odyssey 3D', 1, engineSnapshot);
+
+  assert.equal(state.magic, SAVE_STATE_MAGIC);
+  assert.equal(state.version, 1);
+  assert.equal(state.gameId, 'odyssey');
+  assert.equal(state.slot, 1);
+  assert.equal(state.engineState.score, 350);
+  assert.deepEqual(state.engineState.playerPos, [2.5, 0.5, -12.4]);
+
+  // ARM64 CPU Registers check
+  assert.equal(state.registers.pc, '0x0000007100084a20');
+  assert.equal(state.registers.sp, '0x0000007fe0812ff0');
+  assert.equal(state.registers.x.length, 31);
+  assert.ok(state.registers.x[0].includes('0000015e')); // 350 in hex = 0x15e
+
+  // Memory map check
+  assert.equal(state.memoryMap.heapSegment.allocatedBytes, 67108864);
+  assert.ok(state.androidStoragePath.includes('/sdcard/Android/data/org.nxnative.emu/files/savestates/'));
+});
+
+test('SaveState serializes and deserializes accurately with round-trip fidelity', () => {
+  const engineSnapshot = {
+    score: 800,
+    playerPos: [-4.0, 1.2, -30.0] as [number, number, number],
+    playerVelY: 3.5,
+    cameraPos: [-4.0, 3.5, -22.0] as [number, number, number],
+    playtimeSeconds: 125,
+    targets: [{ id: 1, x: 0, y: 0.7, z: -20, collected: true }],
+  };
+
+  const original = createSaveState('botw', 'Breath of the Wild Realm', 2, engineSnapshot);
+  const serialized = serializeSaveState(original);
+  assert.ok(typeof serialized === 'string');
+
+  const restored = deserializeSaveState(serialized);
+  assert.equal(restored.magic, original.magic);
+  assert.equal(restored.gameId, original.gameId);
+  assert.equal(restored.slot, original.slot);
+  assert.equal(restored.engineState.score, 800);
+  assert.deepEqual(restored.engineState.playerPos, [-4.0, 1.2, -30.0]);
+  assert.equal(restored.registers.x.length, 31);
+});
+
+test('SaveState deserializer rejects corrupted or incompatible state files', () => {
+  // Missing magic
+  assert.throws(() => {
+    deserializeSaveState(JSON.stringify({ gameId: 'botw', slot: 1 }));
+  }, /Incompatible or invalid state magic header/);
+
+  // Invalid JSON
+  assert.throws(() => {
+    deserializeSaveState('not valid json content');
+  }, /Invalid JSON format/);
+});
+
+test('formatPlaytime correctly formats seconds into mm:ss', () => {
+  assert.equal(formatPlaytime(0), '00:00');
+  assert.equal(formatPlaytime(65), '01:05');
+  assert.equal(formatPlaytime(3599), '59:59');
+});
+
