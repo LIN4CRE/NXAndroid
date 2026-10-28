@@ -162,3 +162,36 @@ test('formatPlaytime correctly formats seconds into mm:ss', () => {
   assert.equal(formatPlaytime(3599), '59:59');
 });
 
+import {
+  calculateOnePercentLow,
+  createPerformanceTracker,
+  getMemoryStats,
+  MAX_HISTORY_SAMPLES,
+} from '../games/performance.ts';
+
+test('calculateOnePercentLow correctly identifies the 1% low FPS from history', () => {
+  const stableHistory = [60, 60, 59, 60, 58, 60, 60, 60, 59, 60];
+  assert.equal(calculateOnePercentLow(stableHistory), 58);
+
+  const historyWithDrops = [60, 60, 60, 60, 60, 24, 60, 60, 60, 60];
+  assert.equal(calculateOnePercentLow(historyWithDrops), 24);
+
+  assert.equal(calculateOnePercentLow([]), 60);
+});
+
+test('createPerformanceTracker initializes default stats with accurate bounds', () => {
+  const tracker = createPerformanceTracker();
+  assert.equal(tracker.fpsHistory.length, MAX_HISTORY_SAMPLES);
+  assert.equal(tracker.currentStats.fps, 60);
+  assert.equal(tracker.currentStats.onePercentLowFps, 55);
+  assert.ok(tracker.currentStats.guestHeapMB > 0);
+  assert.equal(tracker.frameCount, 0);
+});
+
+test('getMemoryStats returns positive used and total heap values', () => {
+  const mem = getMemoryStats();
+  assert.ok(mem.usedMB > 0);
+  assert.ok(mem.totalMB >= mem.usedMB);
+});
+
+

@@ -9,6 +9,7 @@ import { GameInfo } from './types.ts';
 import { sfx } from './audio.ts';
 import { VirtualGamepad, GamepadState } from '../components/VirtualGamepad.tsx';
 import { SaveStateModal } from '../components/SaveStateModal.tsx';
+import { PerformanceOverlay } from '../components/PerformanceOverlay.tsx';
 import {
   SaveStateData,
   EngineSnapshot,
@@ -16,7 +17,12 @@ import {
   saveStateToSlot,
   loadStateFromSlot,
 } from './saveState.ts';
-import { ArrowLeft, RotateCcw, Volume2, VolumeX, Maximize2, Trophy, Heart, Save, CheckCircle2 } from 'lucide-react';
+import {
+  PerformanceMetrics,
+  createPerformanceTracker,
+  samplePerformanceFrame,
+} from './performance.ts';
+import { ArrowLeft, RotateCcw, Volume2, VolumeX, Maximize2, Trophy, Heart, Save, CheckCircle2, Activity } from 'lucide-react';
 
 export const GameEngine: React.FC<{
   game: GameInfo;
@@ -30,6 +36,9 @@ export const GameEngine: React.FC<{
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState<boolean>(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [showPerfOverlay, setShowPerfOverlay] = useState<boolean>(true);
+  const perfTrackerRef = useRef(createPerformanceTracker());
+  const [perfStats, setPerfStats] = useState<PerformanceMetrics>(() => perfTrackerRef.current.currentStats);
 
   const engineLiveRef = useRef<{
     getSnapshot: () => EngineSnapshot;
@@ -212,6 +221,11 @@ export const GameEngine: React.FC<{
         inputRef.current.actionX = true;
         sfx.laser();
       }
+      // 'P' or 'F3' to toggle floating performance HUD
+      if (e.key === 'p' || e.key === 'P' || e.key === 'F3') {
+        e.preventDefault();
+        setShowPerfOverlay((prev) => !prev);
+      }
       // F5 Quick Save
       if (e.key === 'F5') {
         e.preventDefault();
@@ -250,6 +264,7 @@ export const GameEngine: React.FC<{
     let lastTime = performance.now();
     let frameCount = 0;
     let lastFpsUpdate = performance.now();
+    let lastPerfUpdate = performance.now();
 
     // Expose engine snapshot extraction and restoration
     engineLiveRef.current = {
@@ -338,6 +353,11 @@ export const GameEngine: React.FC<{
       }
 
       renderer.render(scene, camera);
+      const curMetrics = samplePerformanceFrame(perfTrackerRef.current, now, renderer);
+      if (now - lastPerfUpdate > 100) {
+        setPerfStats(curMetrics);
+        lastPerfUpdate = now;
+      }
       frameId = requestAnimationFrame(loop);
     };
 
@@ -410,9 +430,18 @@ export const GameEngine: React.FC<{
             <Trophy size={14} />
             <span>{score.toString().padStart(5, '0')}</span>
           </div>
-          <div className="hidden md:flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1.5 rounded-xl text-[11px] font-mono text-emerald-400 shadow-2xl">
-            <span>{fps} FPS</span>
-          </div>
+          <button
+            onClick={() => setShowPerfOverlay((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono border shadow-2xl cursor-pointer active:scale-95 transition-all ${
+              showPerfOverlay
+                ? 'bg-cyan-950/90 border-cyan-400 text-cyan-300 ring-1 ring-cyan-500/40'
+                : 'bg-slate-900/90 border-slate-700/80 text-emerald-400 hover:text-white'
+            }`}
+            title="Toggle Performance HUD Overlay (Draw Calls, FPS, Memory - Hotkey: P or F3)"
+          >
+            <Activity size={13} className={showPerfOverlay ? 'animate-pulse text-cyan-400' : 'text-emerald-400'} />
+            <span className="font-bold">{perfStats.fps} FPS</span>
+          </button>
           <button
             onClick={() => setSoundEnabled((prev) => !prev)}
             className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white shadow-2xl cursor-pointer"
@@ -433,7 +462,7 @@ export const GameEngine: React.FC<{
       {/* Controls Hint Strip at Bottom Center */}
       <div className="absolute bottom-2 inset-x-0 flex justify-center z-20 pointer-events-none">
         <div className="bg-slate-900/80 border border-slate-700/60 px-4 py-1 rounded-full text-[11px] font-mono text-slate-400 shadow-xl">
-          {game.controlsSummary}
+          {game.controlsSummary} • Press [P] for Performance HUD
         </div>
       </div>
 
@@ -442,6 +471,13 @@ export const GameEngine: React.FC<{
         onButtonPress={handleButtonPress}
         onStickMove={handleStickMove}
         visible={true}
+      />
+
+      {/* Floating Performance Overlay HUD */}
+      <PerformanceOverlay
+        stats={perfStats}
+        isVisible={showPerfOverlay}
+        onClose={() => setShowPerfOverlay(false)}
       />
 
       {/* Save State & Horizon Memory Dump Modal */}
