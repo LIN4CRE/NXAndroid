@@ -1,0 +1,6 @@
+{
+  "name": "NXNative for Android — Native Systems Port & Performance Studio",
+  "description": "Production-grade Android NDK port of NXNative with Vulkan graphics backend, ARM64 NSO binary rewriter, Horizon OS HLE, Oboe audio, and Three.js 3D architecture visualizer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
